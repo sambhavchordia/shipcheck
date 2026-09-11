@@ -1,10 +1,15 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
-import { parse as parseYaml } from "yaml";
+import {
+  isMap,
+  isScalar,
+  LineCounter,
+  parseDocument,
+} from "yaml";
 import { routeIsIgnored } from "../config.js";
 import type { Check, Finding } from "../types.js";
 
-export type Route = { method: string; path: string };
+export type Route = { method: string; path: string; line?: number };
 
 const HTTP_METHODS = [
   "GET",
@@ -49,7 +54,7 @@ export function normalizePath(p: string): string {
   return out;
 }
 
-/** Map App Router segments: [id] → {id}, [...slug] → {slug}, omit (group). */
+/** Map App Router / pages segments: [id] → {id}, [...slug] → {slug}, omit (group). */
 export function nextSegmentToOpenApi(seg: string): string | null {
   if (/^\([^)]+\)$/.test(seg)) return null;
   const optionalCatch = seg.match(/^\[\[\.\.\.([^\]]+)\]\]$/);
@@ -61,11 +66,9 @@ export function nextSegmentToOpenApi(seg: string): string | null {
   return seg;
 }
 
-export function nextApiPathFromRel(rel: string): string | null {
-  const m = rel.match(/^(?:src\/)?app\/api\/(.*)\/route\.(t|j)sx?$/);
-  if (!m) return null;
+function mapApiSegments(inner: string): string {
   const mapped: string[] = [];
-  for (const seg of m[1].split("/").filter(Boolean)) {
+  for (const seg of inner.split("/").filter(Boolean)) {
     const next = nextSegmentToOpenApi(seg);
     if (next === null) continue;
     mapped.push(next);
@@ -75,6 +78,31 @@ export function nextApiPathFromRel(rel: string): string | null {
     path = path.slice(0, -"/index".length) || "/";
   }
   return path;
+}
+
+export function nextApiPathFromRel(rel: string): string | null {
+  const m = rel.match(/^(?:src\/)?app\/api\/(.*)\/route\.(t|j)sx?$/);
+  if (!m) return null;
+  return mapApiSegments(m[1]);
+}
+
+/** pages/api/users/[id].ts → /api/users/{id} */
+export function pagesApiPathFromRel(rel: string): string | null {
+  const m = rel.match(/^(?:src\/)?pages\/api\/(.+)\.(t|j)sx?$/);
+  if (!m) return null;
+  return mapApiSegments(m[1]);
+}
+
+function exportedHttpMethods(src: string): string[] {
+  const found: string[] = [];
+  for (const method of HTTP_METHODS) {
+    const re = new RegExp(
+      `export\\s+(?:async\\s+)?function\\s+${method}\\b|export\\s+const\\s+${method}\\s*=`,
+    );
+    if (re.test(src)) found.push(method);
+  }
+  if (found.length) return found;
+  return ["GET"];
 }
 
 /** Next.js App Router: app/api/users/[id]/route.ts → /api/users/{id} */
@@ -87,17 +115,29 @@ export function nextAppApiRoutes(root: string): Route[] {
     const path = nextApiPathFromRel(rel);
     if (!path) continue;
     const src = readFileSync(full, "utf8");
-    let any = false;
-    for (const method of HTTP_METHODS) {
-      const re = new RegExp(
-        `export\\s+(?:async\\s+)?function\\s+${method}\\b|export\\s+const\\s+${method}\\s*=`,
-      );
-      if (re.test(src)) {
-        routes.push({ method, path });
-        any = true;
-      }
+    for (const method of exportedHttpMethods(src)) {
+      routes.push({ method, path });
     }
-    if (!any) routes.push({ method: "GET", path });
+  }
+  return routes;
+}
+
+/**
+ * Next.js pages/api: named GET/POST/… exports, else GET
+ * (including `export default` with no named methods).
+ */
+export function nextPagesApiRoutes(root: string): Route[] {
+  const routes: Route[] = [];
+  const files: string[] = [];
+  walk(root, files);
+  for (const full of files) {
+    const rel = relative(root, full).replaceAll("\\", "/");
+    const path = pagesApiPathFromRel(rel);
+    if (!path) continue;
+    const src = readFileSync(full, "utf8");
+    for (const method of exportedHttpMethods(src)) {
+      routes.push({ method, path });
+    }
   }
   return routes;
 }
@@ -123,19 +163,24 @@ export function expressRoutes(root: string): Route[] {
   return routes;
 }
 
-export function readmeApiMentions(root: string): string[] {
+export function readmeApiMentions(root: string): { path: string; line: number }[] {
   const readme = ["README.md", "readme.md"]
     .map((n) => join(root, n))
     .find((p) => existsSync(p));
   if (!readme) return [];
   const src = readFileSync(readme, "utf8");
-  const paths = new Set<string>();
+  const seen = new Set<string>();
+  const out: { path: string; line: number }[] = [];
   const re = /(?<![A-Za-z0-9])(\/api\/[A-Za-z0-9._~!$&'()*+,;=:@{}\-\/]*)/g;
   let match: RegExpExecArray | null;
   while ((match = re.exec(src))) {
-    paths.add(normalizePath(match[1].replace(/[.,)]+$/, "")));
+    const path = normalizePath(match[1].replace(/[.,)]+$/, ""));
+    if (seen.has(path)) continue;
+    seen.add(path);
+    const line = src.slice(0, match.index).split(/\r?\n/).length;
+    out.push({ path, line });
   }
-  return [...paths];
+  return out;
 }
 
 export type OpenApiParse =
@@ -143,7 +188,17 @@ export type OpenApiParse =
   | { status: "invalid"; file: string }
   | { status: "ok"; file: string; routes: Route[] };
 
-function routesFromSpec(doc: unknown): Route[] {
+function lineOfJsonPath(raw: string, path: string): number | undefined {
+  const needle = `"${path}"`;
+  const lines = raw.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].includes(needle)) return i + 1;
+  }
+  return undefined;
+}
+
+function routesFromJsonSpec(raw: string): Route[] {
+  const doc: unknown = JSON.parse(raw);
   if (doc === null || typeof doc !== "object" || Array.isArray(doc)) return [];
   const paths = (doc as { paths?: unknown }).paths;
   if (paths === null || typeof paths !== "object" || Array.isArray(paths)) {
@@ -152,10 +207,44 @@ function routesFromSpec(doc: unknown): Route[] {
   const routes: Route[] = [];
   for (const [path, ops] of Object.entries(paths as Record<string, unknown>)) {
     if (ops === null || typeof ops !== "object" || Array.isArray(ops)) continue;
+    const line = lineOfJsonPath(raw, path);
     for (const method of Object.keys(ops as Record<string, unknown>)) {
       const m = method.toUpperCase();
       if ((HTTP_METHODS as readonly string[]).includes(m)) {
-        routes.push({ method: m, path: normalizePath(path) });
+        routes.push({ method: m, path: normalizePath(path), ...(line ? { line } : {}) });
+      }
+    }
+  }
+  return routes;
+}
+
+function routesFromYamlSpec(raw: string): Route[] {
+  const lineCounter = new LineCounter();
+  const doc = parseDocument(raw, { lineCounter });
+  if (doc.errors.length) {
+    throw doc.errors[0];
+  }
+  const pathsNode = doc.get("paths", true);
+  if (!isMap(pathsNode)) return [];
+  const routes: Route[] = [];
+  for (const item of pathsNode.items) {
+    const path = isScalar(item.key) ? String(item.key.value) : "";
+    let line: number | undefined;
+    const range = item.key && "range" in item.key ? item.key.range : undefined;
+    if (range) {
+      const pos = lineCounter.linePos(range[0]);
+      if (pos.line > 0) line = pos.line;
+    }
+    const ops = item.value;
+    if (!isMap(ops)) continue;
+    for (const op of ops.items) {
+      const method = isScalar(op.key) ? String(op.key.value).toUpperCase() : "";
+      if ((HTTP_METHODS as readonly string[]).includes(method)) {
+        routes.push({
+          method,
+          path: normalizePath(path),
+          ...(line !== undefined ? { line } : {}),
+        });
       }
     }
   }
@@ -169,10 +258,10 @@ export function parseOpenApi(root: string): OpenApiParse {
   if (!specFile) return { status: "missing" };
   const raw = readFileSync(join(root, specFile), "utf8");
   try {
-    const doc: unknown = specFile.endsWith(".json")
-      ? JSON.parse(raw)
-      : parseYaml(raw);
-    return { status: "ok", file: specFile, routes: routesFromSpec(doc) };
+    const routes = specFile.endsWith(".json")
+      ? routesFromJsonSpec(raw)
+      : routesFromYamlSpec(raw);
+    return { status: "ok", file: specFile, routes };
   } catch {
     return { status: "invalid", file: specFile };
   }
@@ -186,7 +275,11 @@ export const routesCheck: Check = {
   name: "routes",
   async run({ root, ignoreRoutes }) {
     const findings: Finding[] = [];
-    const codeRoutes = [...nextAppApiRoutes(root), ...expressRoutes(root)];
+    const codeRoutes = [
+      ...nextAppApiRoutes(root),
+      ...nextPagesApiRoutes(root),
+      ...expressRoutes(root),
+    ];
     const codeSet = new Set(codeRoutes.map(key));
     const codePaths = new Set(codeRoutes.map((r) => r.path));
 
@@ -209,6 +302,7 @@ export const routesCheck: Check = {
             severity: "error",
             code: "ROUTE_SPEC_ORPHAN",
             file: spec.file,
+            ...(r.line !== undefined ? { line: r.line } : {}),
             message: `${r.method} ${r.path} is in the OpenAPI spec but no matching handler was found in code.`,
           });
         }
@@ -237,15 +331,16 @@ export const routesCheck: Check = {
 
     const mentioned = readmeApiMentions(root);
     if (mentioned.length && existsSync(join(root, "README.md"))) {
-      for (const p of mentioned) {
-        if (ignoreRoutes.some((entry) => entry.trim().endsWith(p))) continue;
-        if (!codePaths.has(p)) {
+      for (const m of mentioned) {
+        if (ignoreRoutes.some((entry) => entry.trim().endsWith(m.path))) continue;
+        if (!codePaths.has(m.path)) {
           findings.push({
             check: "routes",
             severity: "error",
             code: "ROUTE_README_ORPHAN",
             file: "README.md",
-            message: `README mentions ${p} but no handler for that path was found.`,
+            line: m.line,
+            message: `README mentions ${m.path} but no handler for that path was found.`,
           });
         }
       }

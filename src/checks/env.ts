@@ -16,10 +16,13 @@ const PLACEHOLDERS = [
   "password",
 ];
 
-function parseEnvFile(raw: string): Map<string, string> {
-  const map = new Map<string, string>();
-  for (const line of raw.split(/\r?\n/)) {
-    const trimmed = line.trim();
+export type EnvEntry = { value: string; line: number };
+
+export function parseEnvFile(raw: string): Map<string, EnvEntry> {
+  const map = new Map<string, EnvEntry>();
+  const lines = raw.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
     if (!trimmed || trimmed.startsWith("#")) continue;
     const eq = trimmed.indexOf("=");
     if (eq <= 0) continue;
@@ -31,7 +34,7 @@ function parseEnvFile(raw: string): Map<string, string> {
     ) {
       value = value.slice(1, -1);
     }
-    map.set(key, value);
+    map.set(key, { value, line: i + 1 });
   }
   return map;
 }
@@ -82,7 +85,8 @@ export const envCheck: Check = {
       });
     } else {
       for (const key of example.keys()) {
-        if (!env.has(key)) {
+        const entry = env.get(key);
+        if (!entry) {
           findings.push({
             check: "env",
             severity: "error",
@@ -90,25 +94,27 @@ export const envCheck: Check = {
             file: ".env",
             message: `Missing key "${key}" that is listed in ${exampleRel}. Value not printed.`,
           });
-        } else if (isEmptyOrDummy(env.get(key) ?? "")) {
+        } else if (isEmptyOrDummy(entry.value)) {
           findings.push({
             check: "env",
             severity: "error",
             code: "ENV_PLACEHOLDER",
             file: ".env",
+            line: entry.line,
             message: `Key "${key}" looks like a placeholder. Value not printed.`,
           });
         }
       }
     }
 
-    for (const [key, value] of example) {
-      if (isDummyValue(value)) {
+    for (const [key, entry] of example) {
+      if (isDummyValue(entry.value)) {
         findings.push({
           check: "env",
           severity: "warn",
           code: "ENV_EXAMPLE_DUMMY",
           file: exampleRel,
+          line: entry.line,
           message: `Key "${key}" in the example file is a dummy value like changeme. Prefer KEY= with an empty value.`,
         });
       }

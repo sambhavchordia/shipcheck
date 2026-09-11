@@ -10,7 +10,7 @@
     "build": "tsc",
     "dev": "npx tsx src/cli.ts",
     "shipcheck": "npx tsx src/cli.ts",
-    "test": "npx tsx --test test/env.test.ts test/routes.test.ts test/report.test.ts test/config.test.ts",
+    "test": "npx tsx --test test/env.test.ts test/routes.test.ts test/report.test.ts test/config.test.ts test/git-env.test.ts test/format.test.ts test/init.test.ts test/baseline.test.ts",
     "test:bad": "npx tsx src/cli.ts --root fixtures/bad-app",
     "test:good": "npx tsx src/cli.ts --root fixtures/good-app"
   },

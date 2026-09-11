@@ -32,4 +32,5 @@ test("empty example is not dummy; empty .env value is ENV_PLACEHOLDER", async ()
   const placeholder = findings.filter((f) => f.code === "ENV_PLACEHOLDER");
   assert.equal(placeholder.length, 1);
   assert.equal(placeholder[0].severity, "error");
+  assert.equal(placeholder[0].line, 1);
 });

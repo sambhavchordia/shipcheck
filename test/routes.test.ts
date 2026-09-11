@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 import {
   nextApiPathFromRel,
   nextAppApiRoutes,
+  nextPagesApiRoutes,
+  pagesApiPathFromRel,
   parseOpenApi,
   type Route,
 } from "../src/checks/routes.js";
@@ -40,6 +42,19 @@ test("Next [id] maps to OpenAPI {id}", () => {
   );
   const found = keys(nextAppApiRoutes(join(fixtures, "dynamic-app")));
   assert.deepEqual(found, new Set(["GET /api/users/{id}"]));
+});
+
+test("pages/api [id] maps to OpenAPI {id}", () => {
+  assert.equal(
+    pagesApiPathFromRel("pages/api/users/[id].ts"),
+    "/api/users/{id}",
+  );
+  assert.equal(
+    pagesApiPathFromRel("pages/api/shop/[...slug].ts"),
+    "/api/shop/{slug}",
+  );
+  const found = keys(nextPagesApiRoutes(join(fixtures, "pages-app")));
+  assert.deepEqual(found, new Set(["GET /api/hello"]));
 });
 
 test("OpenAPI yaml parse includes GET /api/missing on bad-app", () => {

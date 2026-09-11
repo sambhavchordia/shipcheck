@@ -20,6 +20,7 @@ export type Finding = {
   code: FindingCode;
   file: string;
   message: string;
+  line?: number;
 };
 
 export type CheckContext = {

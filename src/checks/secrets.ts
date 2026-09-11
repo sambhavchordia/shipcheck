@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { pathIsIgnored } from "../config.js";
+import { inspectGitEnv, shouldFlagEnvNotIgnored } from "../git-env.js";
 import type { Check, Finding } from "../types.js";
 
 const SKIP_DIRS = new Set([
@@ -58,20 +59,28 @@ export const secretsCheck: Check = {
     const files: string[] = [];
     walk(root, files, root, ignorePaths);
     const envIgnored = gitignoresEnv(root);
+    const git = inspectGitEnv(root);
 
     for (const full of files) {
       const rel = relative(root, full).replaceAll("\\", "/");
       const base = rel.split("/").pop() ?? rel;
 
       if (base === ".env") {
-        if (!envIgnored) {
+        const flag = shouldFlagEnvNotIgnored({
+          exists: true,
+          gitignoredByFile: envIgnored,
+          inWorkTree: git.inWorkTree,
+          tracked: git.tracked,
+        });
+        if (flag) {
           findings.push({
             check: "secrets",
             severity: "error",
             code: "SECRET_ENV_NOT_IGNORED",
             file: rel,
-            message:
-              ".env is present and not listed in .gitignore. Keep it local and commit .env.example only.",
+            message: git.tracked
+              ? ".env is tracked by git. Keep it local and commit .env.example only."
+              : ".env is present and not listed in .gitignore. Keep it local and commit .env.example only.",
           });
         }
         continue;
