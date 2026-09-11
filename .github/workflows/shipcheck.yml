@@ -6,20 +6,32 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: ["20", "22"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: ${{ matrix.node-version }}
       - run: npm install
       - name: unit tests
         run: npm test
+      - name: good-app must exit 0
+        run: npx tsx src/cli.ts --root fixtures/good-app
+      - name: dynamic-app must exit 0
+        run: npx tsx src/cli.ts --root fixtures/dynamic-app
       - name: bad-app must exit 1
         run: |
           set +e
           npx tsx src/cli.ts --root fixtures/bad-app
           code=$?
           set -e
-          if [ "$code" -ne 1 ]; then echo "expected exit 1, got $code"; exit 1; fi
-      - name: good-app must exit 0
-        run: npx tsx src/cli.ts --root fixtures/good-app
+          if [ "$code" -eq 0 ]; then
+            echo "bad-app was expected to fail"
+            exit 1
+          fi
+          if [ "$code" -ne 1 ]; then
+            echo "expected exit 1, got $code"
+            exit 1
+          fi

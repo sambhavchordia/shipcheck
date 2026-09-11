@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import type { Check, Finding } from "../types.js";
 
 const PLACEHOLDERS = [
@@ -46,23 +46,26 @@ function isEmptyOrDummy(value: string): boolean {
 
 export const envCheck: Check = {
   name: "env",
-  async run({ root }) {
+  async run({ root, envExample }) {
     const findings: Finding[] = [];
-    const candidates = [".env.example", ".env.sample"].map((n) => join(root, n));
-    const exampleFile = candidates.find((p) => existsSync(p));
+    const candidates = envExample
+      ? [envExample]
+      : [".env.example", ".env.sample"];
+    const exampleFile = candidates.map((n) => join(root, n)).find((p) => existsSync(p));
 
     if (!exampleFile) {
       findings.push({
         check: "env",
         severity: "warn",
-        file: ".env.example",
+        code: "ENV_MISSING_EXAMPLE",
+        file: envExample ?? ".env.example",
         message:
           "No .env.example or .env.sample found. Add one so required keys are documented.",
       });
       return findings;
     }
 
-    const exampleRel = exampleFile.slice(root.length + 1);
+    const exampleRel = relative(root, exampleFile).replaceAll("\\", "/");
     const example = parseEnvFile(readFileSync(exampleFile, "utf8"));
     const envFile = join(root, ".env");
     const env = existsSync(envFile)
@@ -73,6 +76,7 @@ export const envCheck: Check = {
       findings.push({
         check: "env",
         severity: "warn",
+        code: "ENV_MISSING_KEY",
         file: ".env",
         message: `No .env file. Expected keys from ${exampleRel}: ${[...example.keys()].join(", ") || "(none)"}`,
       });
@@ -82,6 +86,7 @@ export const envCheck: Check = {
           findings.push({
             check: "env",
             severity: "error",
+            code: "ENV_MISSING_KEY",
             file: ".env",
             message: `Missing key "${key}" that is listed in ${exampleRel}. Value not printed.`,
           });
@@ -89,6 +94,7 @@ export const envCheck: Check = {
           findings.push({
             check: "env",
             severity: "error",
+            code: "ENV_PLACEHOLDER",
             file: ".env",
             message: `Key "${key}" looks like a placeholder. Value not printed.`,
           });
@@ -101,6 +107,7 @@ export const envCheck: Check = {
         findings.push({
           check: "env",
           severity: "warn",
+          code: "ENV_EXAMPLE_DUMMY",
           file: exampleRel,
           message: `Key "${key}" in the example file is a dummy value like changeme. Prefer KEY= with an empty value.`,
         });

@@ -2,7 +2,7 @@ import { envCheck } from "./checks/env.js";
 import { secretsCheck } from "./checks/secrets.js";
 import { routesCheck } from "./checks/routes.js";
 import { loadConfig, type ShipcheckConfig } from "./config.js";
-import type { Finding, Report } from "./types.js";
+import type { Report } from "./types.js";
 
 export async function runShipcheck(
   root: string,
@@ -10,15 +10,26 @@ export async function runShipcheck(
 ): Promise<Report> {
   const cfg = config ?? loadConfig(root);
   const checks = [envCheck, secretsCheck, routesCheck];
-  const findings: Finding[] = [];
+  const findings = [];
   for (const check of checks) {
-    findings.push(...(await check.run({ root, ignorePaths: cfg.ignorePaths })));
+    findings.push(
+      ...(await check.run({
+        root,
+        ignorePaths: cfg.ignorePaths,
+        ignoreRoutes: cfg.ignoreRoutes,
+        envExample: cfg.envExample,
+      })),
+    );
   }
+  const error = findings.filter((f) => f.severity === "error").length;
+  const warn = findings.filter((f) => f.severity === "warn").length;
+  const info = findings.filter((f) => f.severity === "info").length;
   return {
+    version: 1,
+    ok: error === 0,
     root,
+    counts: { error, warn, info },
     findings,
-    errors: findings.filter((f) => f.severity === "error").length,
-    warnings: findings.filter((f) => f.severity === "warn").length,
   };
 }
 
@@ -37,11 +48,11 @@ export function formatReport(report: Report): string {
   for (const f of sorted) {
     const tag = f.severity === "error" ? "FAIL" : f.severity === "warn" ? "WARN" : "INFO";
     lines.push(`${tag}  ${f.file}`);
-    lines.push(`      [${f.check}] ${f.message}`);
+    lines.push(`      [${f.check}] [${f.code}] ${f.message}`);
     lines.push("");
   }
   lines.push(
-    `${report.errors} error(s), ${report.warnings} warning(s), ${report.findings.length} finding(s)`,
+    `${report.counts.error} error(s), ${report.counts.warn} warning(s), ${report.findings.length} finding(s)`,
   );
   return lines.join("\n");
 }

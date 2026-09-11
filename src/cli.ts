@@ -22,14 +22,15 @@ Usage:
 
 Options:
   --root DIR           Project to scan (default: cwd)
-  --json               Print the report as JSON
+  --json               Print versioned JSON report
   --fail-on error|warn Exit 1 at this severity (default: error, or shipcheck.config.json)
   --help, -h           Show this help
 
 Config:
   Optional shipcheck.config.json in --root:
-    { "ignorePaths": ["keys"], "failOn": "error" }
+    { "failOn": "error", "ignorePaths": ["keys"], "ignoreRoutes": ["GET /api/health"], "envExample": ".env.example" }
   CLI --fail-on overrides failOn from the config file.
+  --json "ok" is false only when there is an error finding; --fail-on warn can still exit 1 on warnings.
 
 Exit codes:
   0  no errors (and no warnings if --fail-on warn)
@@ -55,8 +56,8 @@ Exit codes:
 
   const failed =
     failOn === "warn"
-      ? report.errors + report.warnings > 0
-      : report.errors > 0;
+      ? report.counts.error + report.counts.warn > 0
+      : report.counts.error > 0;
   process.exit(failed ? 1 : 0);
 }
 

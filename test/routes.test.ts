@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { nextAppApiRoutes, openApiRoutes, type Route } from "../src/checks/routes.js";
+import {
+  nextApiPathFromRel,
+  nextAppApiRoutes,
+  parseOpenApi,
+  type Route,
+} from "../src/checks/routes.js";
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), "..", "fixtures");
 
@@ -20,11 +25,29 @@ test("nextAppApiRoutes parses bad-app App Router handlers", () => {
   assert.deepEqual(found, new Set(["POST /api/login"]));
 });
 
-test("openApiRoutes parses YAML paths for good-app and bad-app", () => {
-  const good = openApiRoutes(join(fixtures, "good-app"));
-  const bad = openApiRoutes(join(fixtures, "bad-app"));
-  assert.ok(good);
-  assert.ok(bad);
-  assert.deepEqual(keys(good), new Set(["POST /api/login", "GET /api/health"]));
-  assert.deepEqual(keys(bad), new Set(["POST /api/login", "GET /api/missing"]));
+test("Next [id] maps to OpenAPI {id}", () => {
+  assert.equal(
+    nextApiPathFromRel("app/api/users/[id]/route.ts"),
+    "/api/users/{id}",
+  );
+  assert.equal(
+    nextApiPathFromRel("app/api/shop/[...slug]/route.ts"),
+    "/api/shop/{slug}",
+  );
+  assert.equal(
+    nextApiPathFromRel("app/api/(group)/login/route.ts"),
+    "/api/login",
+  );
+  const found = keys(nextAppApiRoutes(join(fixtures, "dynamic-app")));
+  assert.deepEqual(found, new Set(["GET /api/users/{id}"]));
+});
+
+test("OpenAPI yaml parse includes GET /api/missing on bad-app", () => {
+  const good = parseOpenApi(join(fixtures, "good-app"));
+  const bad = parseOpenApi(join(fixtures, "bad-app"));
+  assert.equal(good.status, "ok");
+  assert.equal(bad.status, "ok");
+  if (good.status !== "ok" || bad.status !== "ok") return;
+  assert.deepEqual(keys(good.routes), new Set(["POST /api/login", "GET /api/health"]));
+  assert.deepEqual(keys(bad.routes), new Set(["POST /api/login", "GET /api/missing"]));
 });

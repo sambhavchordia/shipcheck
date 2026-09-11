@@ -68,6 +68,7 @@ export const secretsCheck: Check = {
           findings.push({
             check: "secrets",
             severity: "error",
+            code: "SECRET_ENV_NOT_IGNORED",
             file: rel,
             message:
               ".env is present and not listed in .gitignore. Keep it local and commit .env.example only.",
@@ -78,6 +79,7 @@ export const secretsCheck: Check = {
         findings.push({
           check: "secrets",
           severity: "error",
+          code: "SECRET_FILE",
           file: rel,
           message: `Secret-looking filename "${base}" should not be in the repo.`,
         });
@@ -88,6 +90,7 @@ export const secretsCheck: Check = {
           findings.push({
             check: "secrets",
             severity: "error",
+            code: "SECRET_FILE",
             file: rel,
             message: `Secret-looking file suffix "${suffix}".`,
           });

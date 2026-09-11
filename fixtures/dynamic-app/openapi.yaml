@@ -1,0 +1,10 @@
+openapi: 3.0.3
+info:
+  title: Dynamic app
+  version: 0.0.1
+paths:
+  /api/users/{id}:
+    get:
+      responses:
+        "200":
+          description: ok
