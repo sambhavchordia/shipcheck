@@ -1,0 +1,19 @@
+name: shipcheck
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm install
+      - name: shipcheck fixtures (must fail)
+        run: npx tsx src/cli.ts --root fixtures/bad-app
+        continue-on-error: true
+      - name: shipcheck good fixture (must pass)
+        run: npx tsx src/cli.ts --root fixtures/good-app

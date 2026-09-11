@@ -1,0 +1,15 @@
+openapi: 3.0.3
+info:
+  title: Bad app
+  version: 0.0.1
+paths:
+  /api/login:
+    post:
+      responses:
+        "200":
+          description: ok
+  /api/missing:
+    get:
+      responses:
+        "200":
+          description: documented but not implemented

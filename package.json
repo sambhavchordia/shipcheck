@@ -1,0 +1,26 @@
+{
+  "name": "shipcheck",
+  "version": "0.1.0",
+  "description": "CI gate for env drift, dummy secrets, and OpenAPI/README route drift.",
+  "type": "module",
+  "bin": {
+    "shipcheck": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts",
+    "shipcheck": "tsx src/cli.ts",
+    "test:bad": "tsx src/cli.ts --root fixtures/bad-app",
+    "test:good": "tsx src/cli.ts --root fixtures/good-app"
+  },
+  "keywords": ["ci", "openapi", "dotenv", "secrets", "lint"],
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}
