@@ -83,6 +83,25 @@ test("spring-good has 0 errors", async () => {
   assert.ok(found.has("GET /api/microtasks/task/{taskId}"));
 });
 
+test("@RestControllerAdvice is not a handler source", () => {
+  const src = `
+@RestControllerAdvice
+class Advice {
+  @GetMapping("/api/advice")
+  void hint() {}
+}
+
+@RestController
+class Ok {
+  @GetMapping("/api/ok")
+  void ok() {}
+}
+`;
+  const found = new Set(springRoutesFromJava(src).map((r) => `${r.method} ${r.path}`));
+  assert.equal(found.has("GET /api/advice"), false);
+  assert.equal(found.has("GET /api/ok"), true);
+});
+
 test("spring-bad has ROUTE_SPEC_ORPHAN GET /api/missing", async () => {
   const report = await runShipcheck(join(fixtures, "spring-bad"));
   assert.ok(report.counts.error > 0);

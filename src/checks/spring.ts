@@ -99,8 +99,11 @@ function annotationArgs(
   return { args: src.slice(start), end: src.length };
 }
 
-function findAnnotations(src: string, name: string): { args: string | undefined }[] {
-  const out: { args: string | undefined }[] = [];
+function findAnnotations(
+  src: string,
+  name: string,
+): { args: string | undefined; index: number }[] {
+  const out: { args: string | undefined; index: number }[] = [];
   const token = `@${name}`;
   let from = 0;
   while (from < src.length) {
@@ -112,10 +115,23 @@ function findAnnotations(src: string, name: string): { args: string | undefined 
       continue;
     }
     const parsed = annotationArgs(src, idx, name.length);
-    out.push({ args: parsed.args });
+    out.push({ args: parsed.args, index: idx });
     from = parsed.end;
   }
   return out;
+}
+
+function isAdviceContext(src: string, index: number): boolean {
+  const before = src.slice(0, index);
+  const advice = before.lastIndexOf("@RestControllerAdvice");
+  let handler = -1;
+  const re = /@(?:RestController|Controller)\b/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(before))) {
+    if (before.startsWith("@RestControllerAdvice", m.index)) continue;
+    handler = m.index;
+  }
+  return advice >= 0 && advice > handler;
 }
 
 function isSpringController(src: string): boolean {
@@ -125,7 +141,9 @@ function isSpringController(src: string): boolean {
 
 export function springRoutesFromJava(src: string): Route[] {
   if (!isSpringController(src)) return [];
-  const classMaps = findAnnotations(src, "RequestMapping");
+  const classMaps = findAnnotations(src, "RequestMapping").filter(
+    (ann) => !isAdviceContext(src, ann.index),
+  );
   const classAnn = classMaps[0];
   const classPath = annotationPath(classAnn?.args) ?? "";
   if (classAnn && annotationPath(classAnn.args) === null) {
@@ -144,6 +162,7 @@ export function springRoutesFromJava(src: string): Route[] {
 
   for (const { name, method } of SHORTCUTS) {
     for (const ann of findAnnotations(src, name)) {
+      if (isAdviceContext(src, ann.index)) continue;
       const p = annotationPath(ann.args);
       if (p === null) continue;
       emit(method, joinSpringPaths(classPath, p));

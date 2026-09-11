@@ -20,7 +20,7 @@ FAIL  .env
       [env] [ENV_MISSING_KEY] Missing key "AUTH_SECRET" that is listed in .env.example. Value not printed.
 
 FAIL  .env
-      [secrets] [SECRET_ENV_NOT_IGNORED] .env is present and not listed in .gitignore. Keep it local and commit .env.example only.
+      [secrets] [SECRET_ENV_NOT_IGNORED] .env is tracked by git. Keep it local and commit .env.example only.
 
 FAIL  keys/dev.pem
       [secrets] [SECRET_FILE] Secret-looking file suffix ".pem".
@@ -40,19 +40,13 @@ WARN  .env.example:3
 6 error(s), 2 warning(s), 8 finding(s)
 ```
 
-`npx tsx src/cli.ts --root fixtures/good-app` (exit 0):
-
-```
-shipcheck  C:\Users\sambh\Desktop\shipcheck\fixtures\good-app
-
-PASS  no findings
-```
+`npx tsx src/cli.ts --root fixtures/good-app` exits 0. A GitHub clone usually has no `fixtures/good-app/.env`, so you may see `WARN ENV_MISSING_KEY`; that is not a failure. With a local `.env` matching the example, output is `PASS no findings`.
 
 `--json` prints a versioned report (`version: 1`) with optional `line` on findings. `ok` is `false` only when there is an **error** finding. `--fail-on warn` can still exit 1 when `ok` is `true`.
 
 ## Install / Run
 
-Requires Node.js 20+. On Windows use `npx tsx` (not a bare `tsx`).
+Requires Node.js 20+. On Windows use `npx tsx` (not a bare `tsx`). Daily command: `npx tsx src/cli.ts`. The `bin` (`shipcheck`) is `dist/cli.js` and needs `npm run build` first; `npx shipcheck` does not work on a raw clone.
 
 ```bash
 npm install
@@ -158,7 +152,7 @@ A **tracked** `.env` is an error even if `.gitignore` lists `.env`. If `git` is 
 
 Next.js App Router: `app/api/users/[id]/route.ts` → `/api/users/{id}`. Pages Router: `pages/api/users/[id].ts` → `/api/users/{id}`. Catch-all `[...slug]` → `{slug}` (one `{param}`, not `{slug*}`). Route groups `(group)` omitted. `src/app/api` and `src/pages/api` work. Named `GET`/`POST`/… exports if present; otherwise **GET** (including `export default` with no named methods).
 
-OpenAPI is parsed with the `yaml` package (YAML) or `JSON.parse` (JSON). Findings may include `line` (1-based) when it is cheap to know.
+OpenAPI is parsed with the `yaml` package (YAML) or `JSON.parse` (JSON). Empty operations (`get: {}`) count as methods. Findings may include `line` (1-based) when it is cheap to know.
 
 ## Spring Boot
 

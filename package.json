@@ -1,11 +1,16 @@
 {
   "name": "shipcheck",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "CI gate for env drift, dummy secrets, and OpenAPI/README route drift.",
   "type": "module",
   "bin": {
     "shipcheck": "./dist/cli.js"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "npx tsx src/cli.ts",

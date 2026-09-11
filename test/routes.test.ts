@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { test } from "node:test";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -65,4 +67,23 @@ test("OpenAPI yaml parse includes GET /api/missing on bad-app", () => {
   if (good.status !== "ok" || bad.status !== "ok") return;
   assert.deepEqual(keys(good.routes), new Set(["POST /api/login", "GET /api/health"]));
   assert.deepEqual(keys(bad.routes), new Set(["POST /api/login", "GET /api/missing"]));
+});
+
+test("empty OpenAPI get: {} is a real GET", () => {
+  const dir = mkdtempSync(join(tmpdir(), "shipcheck-oa-"));
+  writeFileSync(
+    join(dir, "openapi.yaml"),
+    `openapi: 3.0.3
+info:
+  title: t
+  version: 0.0.1
+paths:
+  /api/missing-report:
+    get: {}
+`,
+  );
+  const parsed = parseOpenApi(dir);
+  assert.equal(parsed.status, "ok");
+  if (parsed.status !== "ok") return;
+  assert.ok(keys(parsed.routes).has("GET /api/missing-report"));
 });
