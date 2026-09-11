@@ -36,7 +36,7 @@ function parseEnvFile(raw: string): Map<string, string> {
   return map;
 }
 
-function isDummyValue(value: string): boolean {
+export function isDummyValue(value: string): boolean {
   return PLACEHOLDERS.includes(value.trim().toLowerCase());
 }
 
