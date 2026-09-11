@@ -1,13 +1,18 @@
 import { envCheck } from "./checks/env.js";
 import { secretsCheck } from "./checks/secrets.js";
 import { routesCheck } from "./checks/routes.js";
+import { loadConfig, type ShipcheckConfig } from "./config.js";
 import type { Finding, Report } from "./types.js";
 
-export async function runShipcheck(root: string): Promise<Report> {
+export async function runShipcheck(
+  root: string,
+  config?: ShipcheckConfig,
+): Promise<Report> {
+  const cfg = config ?? loadConfig(root);
   const checks = [envCheck, secretsCheck, routesCheck];
   const findings: Finding[] = [];
   for (const check of checks) {
-    findings.push(...(await check.run({ root })));
+    findings.push(...(await check.run({ root, ignorePaths: cfg.ignorePaths })));
   }
   return {
     root,

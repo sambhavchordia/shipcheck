@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
+import { pathIsIgnored } from "../config.js";
 import type { Check, Finding } from "../types.js";
 
 export type Route = { method: string; path: string };
@@ -14,18 +15,25 @@ const SKIP_DIRS = new Set([
   "fixtures",
 ]);
 
-function walk(dir: string, files: string[]) {
+function walk(
+  dir: string,
+  files: string[],
+  root: string,
+  ignorePaths: string[],
+) {
   if (!existsSync(dir)) return;
   for (const name of readdirSync(dir)) {
     if (SKIP_DIRS.has(name)) continue;
     const full = join(dir, name);
+    const rel = relative(root, full).replaceAll("\\", "/");
+    if (pathIsIgnored(rel, ignorePaths)) continue;
     let st;
     try {
       st = statSync(full);
     } catch {
       continue;
     }
-    if (st.isDirectory()) walk(full, files);
+    if (st.isDirectory()) walk(full, files, root, ignorePaths);
     else files.push(full);
   }
 }
@@ -38,10 +46,13 @@ function normalizePath(p: string): string {
 }
 
 /** Next.js App Router: app/api/login/route.ts → /api/login */
-export function nextAppApiRoutes(root: string): Route[] {
+export function nextAppApiRoutes(
+  root: string,
+  ignorePaths: string[] = [],
+): Route[] {
   const routes: Route[] = [];
   const files: string[] = [];
-  walk(root, files);
+  walk(root, files, root, ignorePaths);
   for (const full of files) {
     const rel = relative(root, full).replaceAll("\\", "/");
     const m = rel.match(/^(?:src\/)?app\/api\/(.*)\/route\.(t|j)sx?$/);
@@ -64,10 +75,13 @@ export function nextAppApiRoutes(root: string): Route[] {
   return routes;
 }
 
-export function expressRoutes(root: string): Route[] {
+export function expressRoutes(
+  root: string,
+  ignorePaths: string[] = [],
+): Route[] {
   const routes: Route[] = [];
   const files: string[] = [];
-  walk(root, files);
+  walk(root, files, root, ignorePaths);
   const re =
     /\b(?:app|router)\.(get|post|put|patch|delete|options|head)\(\s*([`'"])(\/[^`'"]*)\2/gi;
   for (const full of files) {
@@ -154,11 +168,11 @@ function key(r: Route): string {
 
 export const routesCheck: Check = {
   name: "routes",
-  async run({ root }) {
+  async run({ root, ignorePaths }) {
     const findings: Finding[] = [];
     const codeRoutes = [
-      ...nextAppApiRoutes(root),
-      ...expressRoutes(root),
+      ...nextAppApiRoutes(root, ignorePaths),
+      ...expressRoutes(root, ignorePaths),
     ];
     const codeSet = new Set(codeRoutes.map(key));
     const codePaths = new Set(codeRoutes.map((r) => r.path));

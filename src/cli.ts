@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { resolve } from "node:path";
+import { loadConfig, type FailOn } from "./config.js";
 import { formatReport, runShipcheck } from "./run.js";
 
 function arg(flag: string, fallback?: string): string | undefined {
@@ -19,18 +20,33 @@ async function main() {
 Usage:
   npx tsx src/cli.ts [--root DIR] [--json] [--fail-on error|warn]
 
+Options:
+  --root DIR           Project to scan (default: cwd)
+  --json               Print the report as JSON
+  --fail-on error|warn Exit 1 at this severity (default: error, or shipcheck.config.json)
+  --help, -h           Show this help
+
+Config:
+  Optional shipcheck.config.json in --root:
+    { "ignorePaths": ["keys"], "failOn": "error" }
+  CLI --fail-on overrides failOn from the config file.
+
 Exit codes:
   0  no errors (and no warnings if --fail-on warn)
   1  findings at or above the fail threshold
+  2  unexpected failure
 `);
     process.exit(0);
   }
 
   const root = resolve(arg("--root", process.cwd())!);
-  const failOn = arg("--fail-on", "error");
+  const config = loadConfig(root);
+  const cliFailOn = arg("--fail-on");
+  const failOn: FailOn =
+    cliFailOn === "warn" || cliFailOn === "error" ? cliFailOn : config.failOn;
   const json = has("--json");
 
-  const report = await runShipcheck(root);
+  const report = await runShipcheck(root, config);
   if (json) {
     console.log(JSON.stringify(report, null, 2));
   } else {

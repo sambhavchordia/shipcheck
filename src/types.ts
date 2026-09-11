@@ -9,6 +9,7 @@ export type Finding = {
 
 export type CheckContext = {
   root: string;
+  ignorePaths: string[];
 };
 
 export type Check = {

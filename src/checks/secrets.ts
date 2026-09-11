@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
+import { pathIsIgnored } from "../config.js";
 import type { Check, Finding } from "../types.js";
 
 const SKIP_DIRS = new Set([
@@ -21,13 +22,20 @@ const SECRET_FILE_NAMES = new Set([
 
 const SECRET_SUFFIXES = [".pem", ".p12", ".pfx", ".key"];
 
-function walk(dir: string, files: string[]) {
+function walk(
+  dir: string,
+  files: string[],
+  root: string,
+  ignorePaths: string[],
+) {
   if (!existsSync(dir)) return;
   for (const name of readdirSync(dir)) {
     if (SKIP_DIRS.has(name)) continue;
     const full = join(dir, name);
+    const rel = relative(root, full).replaceAll("\\", "/");
+    if (pathIsIgnored(rel, ignorePaths)) continue;
     const st = statSync(full);
-    if (st.isDirectory()) walk(full, files);
+    if (st.isDirectory()) walk(full, files, root, ignorePaths);
     else files.push(full);
   }
 }
@@ -45,10 +53,10 @@ function gitignoresEnv(root: string): boolean {
 
 export const secretsCheck: Check = {
   name: "secrets",
-  async run({ root }) {
+  async run({ root, ignorePaths }) {
     const findings: Finding[] = [];
     const files: string[] = [];
-    walk(root, files);
+    walk(root, files, root, ignorePaths);
     const envIgnored = gitignoresEnv(root);
 
     for (const full of files) {

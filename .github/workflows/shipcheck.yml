@@ -12,8 +12,14 @@ jobs:
         with:
           node-version: "22"
       - run: npm install
-      - name: shipcheck fixtures (must fail)
-        run: npx tsx src/cli.ts --root fixtures/bad-app
-        continue-on-error: true
-      - name: shipcheck good fixture (must pass)
+      - name: unit tests
+        run: npm test
+      - name: bad-app must exit 1
+        run: |
+          set +e
+          npx tsx src/cli.ts --root fixtures/bad-app
+          code=$?
+          set -e
+          if [ "$code" -ne 1 ]; then echo "expected exit 1, got $code"; exit 1; fi
+      - name: good-app must exit 0
         run: npx tsx src/cli.ts --root fixtures/good-app
