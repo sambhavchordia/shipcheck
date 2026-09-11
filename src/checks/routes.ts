@@ -8,6 +8,7 @@ import {
 } from "yaml";
 import { routeIsIgnored } from "../config.js";
 import type { Check, Finding } from "../types.js";
+import { springJavaRoutes } from "./spring.js";
 
 export type Route = { method: string; path: string; line?: number };
 
@@ -29,6 +30,8 @@ const SKIP_DIRS = new Set([
   ".next",
   "coverage",
   "fixtures",
+  "target",
+  ".idea",
 ]);
 
 function walk(dir: string, files: string[]) {
@@ -279,6 +282,7 @@ export const routesCheck: Check = {
       ...nextAppApiRoutes(root),
       ...nextPagesApiRoutes(root),
       ...expressRoutes(root),
+      ...springJavaRoutes(root),
     ];
     const codeSet = new Set(codeRoutes.map(key));
     const codePaths = new Set(codeRoutes.map((r) => r.path));

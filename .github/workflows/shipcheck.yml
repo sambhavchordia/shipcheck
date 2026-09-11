@@ -23,6 +23,8 @@ jobs:
         run: npx tsx src/cli.ts --root fixtures/dynamic-app
       - name: pages-app must exit 0
         run: npx tsx src/cli.ts --root fixtures/pages-app
+      - name: spring-good must exit 0
+        run: npx tsx src/cli.ts --root fixtures/spring-good
       - name: bad-app must exit 1
         run: |
           set +e
@@ -31,6 +33,20 @@ jobs:
           set -e
           if [ "$code" -eq 0 ]; then
             echo "bad-app was expected to fail"
+            exit 1
+          fi
+          if [ "$code" -ne 1 ]; then
+            echo "expected exit 1, got $code"
+            exit 1
+          fi
+      - name: spring-bad must exit 1
+        run: |
+          set +e
+          npx tsx src/cli.ts --root fixtures/spring-bad
+          code=$?
+          set -e
+          if [ "$code" -eq 0 ]; then
+            echo "spring-bad was expected to fail"
             exit 1
           fi
           if [ "$code" -ne 1 ]; then

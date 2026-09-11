@@ -60,6 +60,7 @@ npx tsx src/cli.ts --root fixtures/bad-app
 npx tsx src/cli.ts --root fixtures/good-app
 npx tsx src/cli.ts --root fixtures/dynamic-app
 npx tsx src/cli.ts --root fixtures/pages-app
+npx tsx src/cli.ts --root fixtures/spring-good
 npx tsx src/cli.ts init --root .
 npm test
 ```
@@ -159,6 +160,26 @@ Next.js App Router: `app/api/users/[id]/route.ts` → `/api/users/{id}`. Pages R
 
 OpenAPI is parsed with the `yaml` package (YAML) or `JSON.parse` (JSON). Findings may include `line` (1-based) when it is cheap to know.
 
+## Spring Boot
+
+Java `*.java` files under `--root` are extra **routes** sources (same check name, not a new one). Skip `target/`, `build/`, `.git`, `node_modules`, `.idea`.
+
+Prefix join (normalize: leading `/`, drop trailing `/` except `/`):
+
+| Class `@RequestMapping` | Method | Result |
+|---|---|---|
+| `/api` | `@GetMapping("/users")` | `GET /api/users` |
+| `/api` | `@GetMapping("users")` | `GET /api/users` |
+| (none) | `@GetMapping("/api/users")` | `GET /api/users` |
+| `/api/users` | `@GetMapping` / `@PostMapping` (no args) | `GET` / `POST /api/users` |
+| `/api/microtasks` | `@GetMapping("/task/{taskId}")` | `GET /api/microtasks/task/{taskId}` |
+
+`{taskId}` / `{id}` are kept. `@RequestMapping(method = { RequestMethod.GET, RequestMethod.POST })` emits both methods. `@RestControllerAdvice` is skipped.
+
+Not parsed (not guessed): RouterFunction, Kotlin, XML servlets, annotation paths that are not string literals (no `Routes.USERS` constant resolution). Spring Actuator is **not** synthesized; `GET /actuator/health` is not a Java mapping unless you declare it. README extraction is still `/api/...` only (globs like `/api/auth/**` may orphan).
+
+Env: `.env.example` / `.env.sample` still win and compare only to `.env` (missing `.env` is a warn). Dotenv keys are not compared to `application.properties` (`DB_URL` vs `spring.datasource.url`). If there is no dotenv example, first-match `application-example.yml` / `.properties` / `application.yml.example` / `src/main/resources/application-example.yml` is flattened (YAML nested scalars → dotted keys; skip sequences and documents after `---`) and compared to `application.yml` / `application.properties` (including under `src/main/resources`).
+
 ## GitHub annotations
 
 `--format github` prints workflow commands (error / warning / notice). Example:
@@ -181,10 +202,11 @@ Those can sit next to shipcheck.
 
 ## Limits
 
-- Next.js App Router + Pages `pages/api` + a naive Express `app\|router.(get\|post\|…)` regex (no Fastify / Nest / Remix)
-- Catch-all folders map to one `{param}` as above
-- README `/api/...` extraction has false positives
+- Next.js App Router + Pages `pages/api` + a naive Express regex + Spring annotation scan of `*.java` (no Fastify / Nest / Remix / Kotlin / RouterFunction)
+- Catch-all Next folders map to one `{param}` as above
+- README `/api/...` extraction has false positives (including `/**` globs)
 - Secret check is filename, suffix, and whether `.env` is tracked — not history, not entropy, not file contents
+- Spring Actuator endpoints are not implied from `management.*` config
 
 ## Project layout
 
@@ -196,11 +218,14 @@ src/types.ts
 src/checks/env.ts
 src/checks/secrets.ts
 src/checks/routes.ts
+src/checks/spring.ts
 test/
 fixtures/bad-app           must fail (exit 1)
 fixtures/good-app          must pass (exit 0)
 fixtures/dynamic-app       [id] → {id}, must pass (exit 0)
 fixtures/pages-app         pages/api, must pass (exit 0)
+fixtures/spring-good       Spring prefix join, must pass (exit 0)
+fixtures/spring-bad        must fail (exit 1)
 .github/workflows/shipcheck.yml
 LICENSE                    MIT
 ```

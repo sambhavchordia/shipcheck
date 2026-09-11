@@ -11,6 +11,8 @@ const SKIP_DIRS = new Set([
   "build",
   ".next",
   "coverage",
+  "target",
+  ".idea",
 ]);
 
 const SECRET_FILE_NAMES = new Set([

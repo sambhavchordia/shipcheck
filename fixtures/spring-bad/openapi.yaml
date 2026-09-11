@@ -1,0 +1,15 @@
+openapi: 3.0.3
+info:
+  title: Spring bad
+  version: 0.0.1
+paths:
+  /api/users:
+    get:
+      responses:
+        "200":
+          description: ok
+  /api/missing:
+    get:
+      responses:
+        "200":
+          description: missing
