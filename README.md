@@ -1,18 +1,26 @@
 # shipcheck
 
+Fails a PR when env files, secret-looking paths, or OpenAPI/README routes disagree with the code.
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org/)
 [![CI](https://img.shields.io/github/actions/workflow/status/sambhavchordia/shipcheck/shipcheck.yml?branch=main)](https://github.com/sambhavchordia/shipcheck/actions/workflows/shipcheck.yml)
 
-Deterministic CI gate for env drift, dummy secrets, and OpenAPI/README routes that do not match the code. It compares files on disk, prints FAIL/WARN with stable finding codes, and exits 1. No LLM. Secret values are never printed.
+## Why
 
-## Demo
+README paths, OpenAPI, and `.env.example` drift from the handlers and env files people actually ship. That still merges.
 
-`npx tsx src/cli.ts --root fixtures/bad-app` (exit 1):
+shipcheck compares those files on disk and exits 1. No crawler. No LLM in pass/fail. Secret values are never printed.
+
+## See it
+
+```bash
+npx tsx src/cli.ts --root fixtures/bad-app
+```
+
+Exit 1:
 
 ```
-shipcheck  C:\Users\sambh\Desktop\shipcheck\fixtures\bad-app
-
 FAIL  .env:2
       [env] [ENV_PLACEHOLDER] Key "JWT_SECRET" looks like a placeholder. Value not printed.
 
@@ -36,67 +44,75 @@ WARN  .env.example:2
 
 WARN  .env.example:3
       [env] [ENV_EXAMPLE_DUMMY] Key "AUTH_SECRET" in the example file is a dummy value like changeme. Prefer KEY= with an empty value.
-
-6 error(s), 2 warning(s), 8 finding(s)
 ```
 
-`npx tsx src/cli.ts --root fixtures/good-app` exits 0. A GitHub clone usually has no `fixtures/good-app/.env`, so you may see `WARN ENV_MISSING_KEY`; that is not a failure. With a local `.env` matching the example, output is `PASS no findings`.
+```bash
+npx tsx src/cli.ts --root fixtures/good-app
+```
 
-`--json` prints a versioned report (`version: 1`) with optional `line` on findings. `ok` is `false` only when there is an **error** finding. `--fail-on warn` can still exit 1 when `ok` is `true`.
+Exit 0. A clone without `fixtures/good-app/.env` may print `WARN ENV_MISSING_KEY`; that is not a failure. With a local `.env` matching the example, output is `PASS no findings`.
 
-## Install / Run
+Spring fixtures: `fixtures/spring-good` (exit 0) and `fixtures/spring-bad` (exit 1). Also `dynamic-app` and `pages-app` (exit 0).
 
-Requires Node.js 20+. On Windows use `npx tsx` (not a bare `tsx`). Daily command: `npx tsx src/cli.ts`. The `bin` (`shipcheck`) is `dist/cli.js` and needs `npm run build` first; `npx shipcheck` does not work on a raw clone.
+## Install
+
+Node 20+. Daily command is `npx tsx src/cli.ts`. The `bin` (`shipcheck`) is `dist/cli.js` and needs `npm run build` first.
 
 ```bash
 npm install
-npx tsx src/cli.ts --root fixtures/bad-app
-npx tsx src/cli.ts --root fixtures/good-app
-npx tsx src/cli.ts --root fixtures/dynamic-app
-npx tsx src/cli.ts --root fixtures/pages-app
-npx tsx src/cli.ts --root fixtures/spring-good
-npx tsx src/cli.ts init --root .
+npx tsx src/cli.ts --root <dir>
 npm test
 ```
 
 ```bash
 npx tsx src/cli.ts --root . --json
-npx tsx src/cli.ts --root fixtures/bad-app --format github
-npx tsx src/cli.ts --root fixtures/bad-app --fail-on warn
+npx tsx src/cli.ts --root . --format github
+npx tsx src/cli.ts --root . --fail-on error
+npx tsx src/cli.ts --root . --fail-on warn
+npx tsx src/cli.ts init --root .
+npx tsx src/cli.ts --root . --write-baseline
 npx tsx src/cli.ts --help
 ```
 
-`GITHUB_ACTIONS=true` does **not** switch format. Pass `--format github` as an extra CI step if you want annotations.
+`GITHUB_ACTIONS=true` does not switch format. Pass `--format github` if you want annotations.
 
-## CLI flags
+## What it checks
 
-| Flag | Meaning |
+| Check | Errors when | Codes |
+|---|---|---|
+| env | Example key missing from `.env`, or `.env` value empty / dummy (`changeme`, `replace-me`, …). Dummy values in the example are warnings. Missing `.env` is a warning. Values not printed. | `ENV_MISSING_KEY`, `ENV_PLACEHOLDER`, `ENV_EXAMPLE_DUMMY`, `ENV_MISSING_EXAMPLE` |
+| secrets | `.env` present and not gitignored, or `.env` tracked by git; filenames like `id_rsa`; suffixes `.pem` / `.p12` / `.pfx` / `.key` | `SECRET_ENV_NOT_IGNORED`, `SECRET_FILE` |
+| routes | OpenAPI method+path has no handler, or the reverse; README `/api/...` has no handler. No spec is info. Invalid spec is an error (`invalid spec`). | `ROUTE_SPEC_ORPHAN`, `ROUTE_CODE_MISSING_FROM_SPEC`, `ROUTE_README_ORPHAN`, `ROUTE_NO_SPEC` |
+
+If the example is dotenv (`.env.example` / `.env.sample`), it is compared only to `.env` — not to `application.properties`.
+
+## What it can read
+
+- Next.js App Router `app/api/**/route.ts` and `src/app/api` (`[id]` → `{id}`, `[...slug]` → `{slug}`)
+- Next.js `pages/api` (same dynamic mapping; `export default` → GET)
+- Express-like `app.get("/...")` / `router.post("/...")` regex
+- Spring `@RestController` / `@Controller`: class `@RequestMapping` + method mapping; empty `@GetMapping` uses the class prefix; skip `@RestControllerAdvice`
+- OpenAPI `openapi.yaml` / `.yml` / `.json`, including empty operations (`get: {}`)
+- README `/api/...` mentions
+
+## What it is not
+
+| Tool | Difference |
 |---|---|
-| `--root DIR` | Project to scan or init (default: current directory) |
-| `--json` | Alias for `--format json` |
-| `--format text\|json\|github` | Output format (default `text`) |
-| `--fail-on error\|warn` | Exit 1 at this severity. Default `error`, or `failOn` from config |
-| `--write-baseline` | Write error+warn findings to `shipcheck.ok.json` (never `SECRET_*`) |
-| `--force` | With `init`: overwrite stub files |
-| `--help`, `-h` | Usage |
+| Gitleaks / TruffleHog | Git history and entropy. shipcheck does neither. |
+| Spectral | OpenAPI style/schema lint |
+| Dredd | Hits a live server |
+| shipcheck.pro / shipcheckhq.com | Unrelated website-audit SaaS. This repo is a TypeScript CLI: [sambhavchordia/shipcheck](https://github.com/sambhavchordia/shipcheck) |
 
-Exit `0` if nothing at or above the threshold, `1` if there are findings at or above it, `2` on unexpected failure (invalid config or baseline JSON). `info` findings never fail the process.
+## Limits
 
-Precedence: CLI flags > `shipcheck.config.json` > defaults.
-
-## init
-
-`npx tsx src/cli.ts init [--root DIR] [--force]` creates, if missing:
-
-- `.env.example` (`DATABASE_URL=`)
-- `openapi.yaml` (OpenAPI 3 stub, `paths: {}`)
-- `shipcheck.config.json` (`failOn: error`, empty ignore arrays)
-
-Does not create `.env`. Does not overwrite without `--force`. If everything already exists: prints `nothing changed`, exit 0.
+- No Flask, FastAPI, Django, Nest, Go, Rails, ASP.NET, Kotlin, RouterFunction, or Spring Actuator (not faked)
+- README `/api/...` globs (`/**`) can false-positive
+- Secret check is filename, suffix, and whether `.env` is tracked — not history, not entropy, not file contents
 
 ## Config
 
-Optional `{root}/shipcheck.config.json` (`JSON.parse`). Missing file keeps defaults. Unknown keys are ignored.
+Optional `shipcheck.config.json` in `--root`. CLI flags win.
 
 ```json
 {
@@ -107,126 +123,18 @@ Optional `{root}/shipcheck.config.json` (`JSON.parse`). Missing file keeps defau
 }
 ```
 
-| Field | Type | Default | Meaning |
-|---|---|---|---|
-| `failOn` | `"error"` \| `"warn"` | `"error"` | Exit threshold when `--fail-on` is omitted |
-| `ignorePaths` | `string[]` | `[]` | Skip **secret** files whose relative path equals an entry or is under `entry/` |
-| `ignoreRoutes` | `string[]` | `[]` | Skip route findings whose `METHOD /path` matches (method case-insensitive) |
-| `envExample` | `string` | first existing `.env.example` or `.env.sample` | Example env file to compare |
+Optional `shipcheck.ok.json` baseline (`--write-baseline` writes error+warn findings). `SECRET_FILE` and `SECRET_ENV_NOT_IGNORED` are never ignored.
 
-## Baseline
-
-Optional `{root}/shipcheck.ok.json` for adopting a messy repo. It is **not** a way to hide a committed `.env`.
-
-```json
-{
-  "version": 1,
-  "ignore": [
-    { "code": "ROUTE_README_ORPHAN", "file": "README.md" }
-  ]
-}
-```
-
-A finding is suppressed when `code` matches and `file` is omitted or equals `finding.file`. `SECRET_FILE` and `SECRET_ENV_NOT_IGNORED` are **never** suppressible. Invalid JSON → stderr, exit 2.
-
-`--write-baseline` writes current error+warn findings (except those two secret codes).
-
-## Checks and codes
-
-Evaluate order: load config → **env** → **secrets** → **routes** → apply baseline → print → exit.
-
-| Check | Code | Severity | When |
-|---|---|---|---|
-| env | `ENV_MISSING_EXAMPLE` | warn | No example file |
-| env | `ENV_MISSING_KEY` | error / warn | Example key missing from `.env` (error), or no `.env` file (warn). Values not printed. |
-| env | `ENV_PLACEHOLDER` | error | `.env` value empty or dummy (`changeme`, `replace-me`, …) |
-| env | `ENV_EXAMPLE_DUMMY` | warn | Example value is dummy (empty example is OK) |
-| secrets | `SECRET_ENV_NOT_IGNORED` | error | `.env` present and not listed in the target `.gitignore`, **or** `.env` is **tracked** (`git ls-files`) even if gitignored |
-| secrets | `SECRET_FILE` | error | `id_rsa` (and similar) or suffix `.pem` / `.p12` / `.pfx` / `.key` |
-| routes | `ROUTE_SPEC_ORPHAN` | error | OpenAPI method+path has no handler |
-| routes | `ROUTE_CODE_MISSING_FROM_SPEC` | error | Handler has no OpenAPI method+path |
-| routes | `ROUTE_README_ORPHAN` | error | README `/api/...` has no handler |
-| routes | `ROUTE_NO_SPEC` | info / error | No spec (info) or invalid YAML/JSON (`invalid spec`, error; diff skipped) |
-
-A **tracked** `.env` is an error even if `.gitignore` lists `.env`. If `git` is missing or `--root` is not a work tree, only the `.gitignore` file is used. No history scan, no file-content scan.
-
-Next.js App Router: `app/api/users/[id]/route.ts` → `/api/users/{id}`. Pages Router: `pages/api/users/[id].ts` → `/api/users/{id}`. Catch-all `[...slug]` → `{slug}` (one `{param}`, not `{slug*}`). Route groups `(group)` omitted. `src/app/api` and `src/pages/api` work. Named `GET`/`POST`/… exports if present; otherwise **GET** (including `export default` with no named methods).
-
-OpenAPI is parsed with the `yaml` package (YAML) or `JSON.parse` (JSON). Empty operations (`get: {}`) count as methods. Findings may include `line` (1-based) when it is cheap to know.
-
-## Spring Boot
-
-Java `*.java` files under `--root` are extra **routes** sources (same check name, not a new one). Skip `target/`, `build/`, `.git`, `node_modules`, `.idea`.
-
-Prefix join (normalize: leading `/`, drop trailing `/` except `/`):
-
-| Class `@RequestMapping` | Method | Result |
-|---|---|---|
-| `/api` | `@GetMapping("/users")` | `GET /api/users` |
-| `/api` | `@GetMapping("users")` | `GET /api/users` |
-| (none) | `@GetMapping("/api/users")` | `GET /api/users` |
-| `/api/users` | `@GetMapping` / `@PostMapping` (no args) | `GET` / `POST /api/users` |
-| `/api/microtasks` | `@GetMapping("/task/{taskId}")` | `GET /api/microtasks/task/{taskId}` |
-
-`{taskId}` / `{id}` are kept. `@RequestMapping(method = { RequestMethod.GET, RequestMethod.POST })` emits both methods. `@RestControllerAdvice` is skipped.
-
-Not parsed (not guessed): RouterFunction, Kotlin, XML servlets, annotation paths that are not string literals (no `Routes.USERS` constant resolution). Spring Actuator is **not** synthesized; `GET /actuator/health` is not a Java mapping unless you declare it. README extraction is still `/api/...` only (globs like `/api/auth/**` may orphan).
-
-Env: `.env.example` / `.env.sample` still win and compare only to `.env` (missing `.env` is a warn). Dotenv keys are not compared to `application.properties` (`DB_URL` vs `spring.datasource.url`). If there is no dotenv example, first-match `application-example.yml` / `.properties` / `application.yml.example` / `src/main/resources/application-example.yml` is flattened (YAML nested scalars → dotted keys; skip sequences and documents after `---`) and compared to `application.yml` / `application.properties` (including under `src/main/resources`).
-
-## GitHub annotations
-
-`--format github` prints workflow commands (error / warning / notice). Example:
+## Layout
 
 ```
-::error file=openapi.yaml,line=11::[ROUTE_SPEC_ORPHAN] GET /api/missing is in the OpenAPI spec but no matching handler was found in code.
-```
-
-Exit codes are unchanged. CI can add this as an extra step.
-
-## Not this tool
-
-| Tool | What it covers that shipcheck does not |
-|---|---|
-| Gitleaks / TruffleHog | Git history and entropy-based secret scanning |
-| Spectral | OpenAPI style and schema lint |
-| Dredd | Hitting a live server against the spec |
-
-Those can sit next to shipcheck.
-
-## Limits
-
-- Next.js App Router + Pages `pages/api` + a naive Express regex + Spring annotation scan of `*.java` (no Fastify / Nest / Remix / Kotlin / RouterFunction)
-- Catch-all Next folders map to one `{param}` as above
-- README `/api/...` extraction has false positives (including `/**` globs)
-- Secret check is filename, suffix, and whether `.env` is tracked — not history, not entropy, not file contents
-- Spring Actuator endpoints are not implied from `management.*` config
-
-## Project layout
-
-```
-src/cli.ts
-src/run.ts
-src/config.ts
-src/types.ts
-src/checks/env.ts
-src/checks/secrets.ts
-src/checks/routes.ts
-src/checks/spring.ts
+src/cli.ts src/run.ts src/config.ts src/types.ts
+src/checks/env.ts secrets.ts routes.ts spring.ts
 test/
-fixtures/bad-app           must fail (exit 1)
-fixtures/good-app          must pass (exit 0)
-fixtures/dynamic-app       [id] → {id}, must pass (exit 0)
-fixtures/pages-app         pages/api, must pass (exit 0)
-fixtures/spring-good       Spring prefix join, must pass (exit 0)
-fixtures/spring-bad        must fail (exit 1)
+fixtures/good-app dynamic-app pages-app spring-good   exit 0
+fixtures/bad-app spring-bad                           exit 1
 .github/workflows/shipcheck.yml
-LICENSE                    MIT
 ```
-
-## Resume one-liner
-
-shipcheck — TypeScript CLI that fails CI on env/secret drift and OpenAPI–code route mismatch.
 
 ## License
 
